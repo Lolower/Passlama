@@ -3,65 +3,80 @@ import os
 import asyncio
 from solana.rpc.async_api import AsyncClient
 from solana.keypair import Keypair
-from solana.transaction import Transaction
-from solana.system_program import create_account, SYS_PROGRAM_ID
-from solana.rpc.types import TxOpts
-from solana.publickey import PublicKey
 from Crypto.Random import get_random_bytes
 
-from importlib import import_module
-
 from PyQt6.QtWidgets import QApplication
-
-from crypto.encryption import encrypt_password
 from ui.welcome_window import WelcomeWindow
 
-from crypto.encryption import encrypt_password, decrypt_password
-from accounts.storage_account import load_keypair, store_encrypted_password, get_minimum_balance_for_rent_exemption, create_storage_account, request_airdrop_with_retry
-
-# Налаштування середовища перед створенням QApplication
+from accounts.storage_account import (
+    load_keypair,
+    store_encrypted_password,
+    get_minimum_balance_for_rent_exemption,
+    create_storage_account,
+    request_airdrop_with_retry,
+    encrypt_password,
+    decrypt_password
+)
+# Налаштування середовища
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 
 
 async def init_solana():
-    print("Encryption key:", get_random_bytes(32))  # Генерація випадкового ключа
+    """Ініціалізація Solana-клієнта та акаунтів"""
+    try:
+        print("Generating encryption key:", get_random_bytes(32))
 
-    client = AsyncClient("https://rpc.ankr.com/solana_devnet/4e85c7ea2fb313b0200d5b4ce9a46fbac47588c061fa69c8309c1f56e4a633cb")
+        # Підключення до DevNet
+        client = AsyncClient("https://api.devnet.solana.com")
 
-    # Завантаження ключів
-    payer = Keypair.from_secret_key(load_keypair("crypto/payer.json"))
-    storage_account = Keypair.from_secret_key(load_keypair("crypto/storage_account.json"))
+        # Завантаження ключів
+        payer = load_keypair("payer.json")  # без шляху crypto/
+        storage_account = load_keypair("storage_account.json")  # без шляху crypto/
 
-    # Отримання мінімального балансу для оренди акаунта
-    data_size = 1024  # Приклад розміру акаунта
-    lamports = await get_minimum_balance_for_rent_exemption(client, data_size)
+        # Створення акаунту для зберігання
+        data_size = 1024
+        lamports = await get_minimum_balance_for_rent_exemption(client, data_size)
+        success = await create_storage_account(client, payer, storage_account, lamports, data_size)
 
-    # Створення акаунту для зберігання
-    success = await create_storage_account(client, payer, storage_account, lamports, data_size)
+        return client, payer, storage_account if success else None
 
-    if success:
-        print("Storage account successfully created.")
-    else:
-        print("Failed to create storage account.")
+    except Exception as e:
+        print(f"Solana initialization error: {e}")
+        return None, None, None
+
+
+def run_qt_application():
+    """Запуск Qt додатку"""
+    app = QApplication(sys.argv)
+    window = WelcomeWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+async def async_main():
+    """Асинхронна головна функція"""
+    # Ініціалізація Solana
+    client, payer, storage_account = await init_solana()
+    if not all([client, payer, storage_account]):
+        print("Failed to initialize Solana components")
+        return
+
+    # Запуск Qt додатку в окремому потоці
+    run_qt_application()
 
 
 def main():
-    app = QApplication(sys.argv)
+    """Точка входу"""
+    try:
+        # Для Windows потрібно встановити політику event loop
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    window = WelcomeWindow()
-    window.show()
-
-    sys.exit(app.exec())
+        asyncio.run(async_main())
+    except Exception as e:
+        print(f"Application error: {e}")
 
 
 if __name__ == "__main__":
     main()
-
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        print(f"Application error: {e}")
-
-if __name__ == "__main__":
-    asyncio.run(main())

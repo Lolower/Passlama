@@ -100,18 +100,16 @@ class WelcomeWindow(QMainWindow):
         self.connect_btn.clicked.connect(self.connect_wallet)
         layout.addWidget(self.connect_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
+    def handle_connect_result(self, result):
+        try:
+            if isinstance(result, str):
+                result = json.loads(result)
 
-
-def handle_connect_result(self, result):
-    try:
-        if isinstance(result, str):
-            result = json.loads(result)
-
-        if result.get("error"):
-            QMessageBox.critical(self, "Error", result["error"])
-        elif result.get("publicKey"):
-            QMessageBox.information(self, "Success",
-                                    f"Wallet connected!\nPublic Key: {result['publicKey']}")
-    except Exception as e:
-        QMessageBox.critical(self, "Error", f"Connection failed: {str(e)}")
+            if result.get("error"):
+                QMessageBox.critical(self, "Error", result["error"])
+            elif result.get("publicKey"):
+                QMessageBox.information(self, "Success",
+                                        f"Wallet connected!\nPublic Key: {result['publicKey']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Connection failed: {str(e)}")
 
