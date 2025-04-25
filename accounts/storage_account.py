@@ -94,6 +94,15 @@ async def request_airdrop_with_retry(client, public_key, lamports=1_000_000_000,
         await asyncio.sleep(5)  # Зачекати перед наступною спробою
     return False
 
+import json
+
+def load_keypair(file_path):
+    with open(file_path, 'r') as f:
+        secret_key = json.load(f)
+    return bytes(secret_key)  # Повертаємо масив байтів, а не об'єкт Keypair
+
+payer = Keypair.from_secret_key(load_keypair("crypto/payer.json"))
+
 
 async def main():
     # Ініціалізація клієнта
@@ -137,6 +146,7 @@ async def main():
     finally:
         await client.close()
         print("З'єднання закрито")
+
 
 
 if __name__ == "__main__":
