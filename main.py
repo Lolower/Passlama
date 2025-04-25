@@ -39,15 +39,26 @@ async def init_solana():
         print("Storage account successfully created.")
     else:
         print("Failed to create storage account.")
-async def main():
-    # 1. Ініціалізуємо Solana
-    await init_solana()
 
-    # 2. Запускаємо PyQt
+
+def main():
     app = QApplication(sys.argv)
+
     window = WelcomeWindow()
     window.show()
+
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Application error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

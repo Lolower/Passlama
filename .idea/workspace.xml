@@ -5,12 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="8739be92-f995-4657-bfad-8e4438af475f" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/crypto/storage_account.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ui/styles.qss" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/accounts/storage_account.py" beforeDir="false" afterPath="$PROJECT_DIR$/accounts/storage_account.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ui/styles.qss.py" beforeDir="false" afterPath="$PROJECT_DIR$/crypto/payer.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui/welcome_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/welcome_window.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -215,9 +212,9 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.main" />
+        <item itemvalue="Python.welcome_window" />
         <item itemvalue="Python.вфівіф" />
         <item itemvalue="Python.sdasds" />
-        <item itemvalue="Python.welcome_window" />
         <item itemvalue="Python.encryption" />
       </list>
     </recent_temporary>
