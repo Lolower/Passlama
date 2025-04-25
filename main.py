@@ -1,4 +1,5 @@
 import sys
+import os
 import asyncio
 from solana.rpc.async_api import AsyncClient
 from solana.keypair import Keypair
@@ -17,6 +18,8 @@ from ui.welcome_window import WelcomeWindow
 
 from crypto.encryption import encrypt_password, decrypt_password
 from accounts.storage_account import load_keypair, store_encrypted_password, get_minimum_balance_for_rent_exemption, create_storage_account, request_airdrop_with_retry
+
+# Налаштування середовища перед створенням QApplication
 
 
 async def init_solana():
