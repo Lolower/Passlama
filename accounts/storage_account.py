@@ -46,11 +46,12 @@ async def get_minimum_balance_for_rent_exemption(client, space):
     resp = await client.get_minimum_balance_for_rent_exemption(space)
     return resp['result']
 
+
 async def store_encrypted_password(client, payer, storage_account, encrypted_password):
     """Функція для зберігання зашифрованого паролю в акаунті"""
     space = len(encrypted_password.encode())  # Розмір місця для зберігання
-    lamports = await get_minimum_balance_for_rent_exemption(client, space)  # Отримуємо мінімальну кількість лампортів для аренди
-    return await create_storage_account(client, payer, storage_account, lamports, space)  # Створюємо акаунт і зберігаємо пароль
+    lamports = await get_minimum_balance_for_rent_exemption(client, space)
+    return await create_storage_account(client, payer, storage_account, lamports, space)
 
 
 async def create_storage_account(client, payer, new_account, lamports, space):
@@ -58,7 +59,7 @@ async def create_storage_account(client, payer, new_account, lamports, space):
     try:
         # Отримання останнього blockhash
         blockhash_resp = await client.get_recent_blockhash()
-        recent_blockhash = blockhash_resp['result']['value']['blockhash'] if isinstance(blockhash_resp, dict) else blockhash_resp.value.blockhash
+        recent_blockhash = blockhash_resp['result']['value']['blockhash']
 
         # Створення транзакції
         txn = Transaction()
@@ -82,10 +83,12 @@ async def create_storage_account(client, payer, new_account, lamports, space):
 
         # Відправка транзакції
         send_opts = TxOpts(
-            skip_preflight=True,
+            skip_preflight=False,  # Changed to False for better error detection
             preflight_commitment=Confirmed,
             max_retries=3
         )
+
+        # Send transaction with all required signers
         result = await client.send_transaction(
             txn,
             payer,
@@ -93,21 +96,25 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             opts=send_opts
         )
 
-        # Логування результату
-        print(f"🚨 Відповідь на транзакцію: {result}")
+        if 'result' not in result:
+            print(f"❌ Помилка відправки транзакції: {result}")
+            return False
 
-        # Оновлене оброблення результату транзакції
-        if 'result' in result:
-            tx_id = result['result']
-            confirmation = await client.confirm_transaction(tx_id, commitment=Confirmed)
-            if confirmation['result']['value']['err'] is None:
-                print(f"✅ Акаунт {new_account.public_key} успішно створено!")
-                return True
-            else:
-                print(f"❌ Помилка підтвердження: {confirmation['result']['value']['err']}")
-                return False
+        tx_id = result['result']
+        print(f"📤 Транзакція відправлена з ID: {tx_id}")
+
+        # Очікування підтвердження
+        await asyncio.sleep(5)  # Short delay for confirmation
+        confirmation = await client.confirm_transaction(
+            tx_id,
+            commitment=Confirmed
+        )
+
+        if confirmation['result']['value']['err'] is None:
+            print(f"✅ Акаунт {new_account.public_key} успішно створено!")
+            return True
         else:
-            print(f"❌ Помилка створення акаунту, результат: {result}")
+            print(f"❌ Помилка підтвердження: {confirmation['result']['value']['err']}")
             return False
 
     except Exception as e:
