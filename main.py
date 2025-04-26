@@ -13,7 +13,7 @@ from accounts.storage_account import (
     store_encrypted_password,
     get_minimum_balance_for_rent_exemption,
     create_storage_account,
-    request_airdrop_with_retry,
+    request_airdrop_if_needed,
     encrypt_password,
     decrypt_password
 )

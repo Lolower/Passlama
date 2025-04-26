@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-import httpx
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 import base64
@@ -12,17 +11,18 @@ from solana.system_program import CreateAccountParams, create_account
 from solana.rpc.commitment import Confirmed
 from solana.publickey import PublicKey
 from solana.rpc.types import TxOpts
-from solders.pubkey import Pubkey
 
 SYS_PROGRAM_ID = PublicKey("11111111111111111111111111111111")
 DEVNET_URL = "https://api.devnet.solana.com"
 
 
 def ensure_crypto_dir():
+    """Створює папку crypto якщо її немає"""
     os.makedirs("crypto", exist_ok=True)
 
 
 def generate_and_save_keypair(filename):
+    """Генерує та зберігає новий ключ"""
     ensure_crypto_dir()
     keypair = Keypair.generate()
     with open(os.path.join("crypto", filename), 'w') as f:
@@ -31,6 +31,7 @@ def generate_and_save_keypair(filename):
 
 
 def load_keypair(filename):
+    """Завантажує ключ з файлу або генерує новий"""
     try:
         with open(os.path.join("crypto", filename), 'r') as f:
             secret_key = json.load(f)
@@ -41,17 +42,30 @@ def load_keypair(filename):
 
 
 async def get_minimum_balance_for_rent_exemption(client, space):
-    return (await client.get_minimum_balance_for_rent_exemption(space)).value
+    """Отримує мінімальний баланс для аренди"""
+    resp = await client.get_minimum_balance_for_rent_exemption(space)
+    return resp['result']
+
+async def store_encrypted_password(client, payer, storage_account, encrypted_password):
+    """Функція для зберігання зашифрованого паролю в акаунті"""
+    space = len(encrypted_password.encode())  # Розмір місця для зберігання
+    lamports = await get_minimum_balance_for_rent_exemption(client, space)  # Отримуємо мінімальну кількість лампортів для аренди
+    return await create_storage_account(client, payer, storage_account, lamports, space)  # Створюємо акаунт і зберігаємо пароль
 
 
 async def create_storage_account(client, payer, new_account, lamports, space):
+    """Створює акаунт для зберігання з покращеною обробкою помилок"""
     try:
-        recent_blockhash = (await client.get_recent_blockhash()).value.blockhash
+        # Отримання останнього blockhash
+        blockhash_resp = await client.get_recent_blockhash()
+        recent_blockhash = blockhash_resp['result']['value']['blockhash'] if isinstance(blockhash_resp, dict) else blockhash_resp.value.blockhash
 
+        # Створення транзакції
         txn = Transaction()
         txn.recent_blockhash = recent_blockhash
         txn.fee_payer = payer.public_key
 
+        # Додавання інструкції створення акаунту
         create_account_ix = create_account(
             CreateAccountParams(
                 from_pubkey=payer.public_key,
@@ -62,159 +76,126 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             )
         )
         txn.add(create_account_ix)
+
+        # Підпис транзакції
         txn.sign(payer, new_account)
 
+        # Відправка транзакції
+        send_opts = TxOpts(
+            skip_preflight=True,
+            preflight_commitment=Confirmed,
+            max_retries=3
+        )
         result = await client.send_transaction(
             txn,
             payer,
             new_account,
-            opts=TxOpts(skip_preflight=True, preflight_commitment=Confirmed)
+            opts=send_opts
         )
 
-        tx_id = result.value
-        await client.confirm_transaction(tx_id, commitment=Confirmed)
-        return True
+        # Логування результату
+        print(f"🚨 Відповідь на транзакцію: {result}")
+
+        # Оновлене оброблення результату транзакції
+        if 'result' in result:
+            tx_id = result['result']
+            confirmation = await client.confirm_transaction(tx_id, commitment=Confirmed)
+            if confirmation['result']['value']['err'] is None:
+                print(f"✅ Акаунт {new_account.public_key} успішно створено!")
+                return True
+            else:
+                print(f"❌ Помилка підтвердження: {confirmation['result']['value']['err']}")
+                return False
+        else:
+            print(f"❌ Помилка створення акаунту, результат: {result}")
+            return False
 
     except Exception as e:
-        print(f"Account creation error: {str(e)}")
+        print(f"❌ Помилка створення акаунту: {str(e)}")
         return False
 
 
-async def request_airdrop_with_retry(client, public_key, lamports=1_000_000_000, retries=3):
-    """Покращена версія з обробкою обмежень"""
-    for attempt in range(retries):
-        try:
-            print(f"Attempt {attempt + 1} to get airdrop...")
-
-            # Додаємо випадкову затримку між спробами
-            await asyncio.sleep(5 * (attempt + 1))
-
-            # Використовуємо інший RPC endpoint
-            alt_rpc = "https://api.devnet.solana.com" if attempt % 2 else "https://devnet.solana.com"
-            client._provider.endpoint_uri = alt_rpc
-
-            result = await client.request_airdrop(
-                public_key,
-                lamports,
-                commitment="confirmed"
-            )
-
-            if hasattr(result, 'error'):
-                print(f"Airdrop error: {result.error}")
-                continue
-
-            # Чекаємо довше для підтвердження
-            await asyncio.sleep(30)
-
-            # Перевіряємо баланс
-            balance = await client.get_balance(public_key)
-            if balance.value >= lamports:
-                print(f"Successfully received {lamports} lamports")
-                return True
-
-            print("Airdrop not confirmed yet...")
-
-        except Exception as e:
-            print(f"Error on attempt {attempt + 1}: {str(e)}")
-
-            # Якщо це помилка 429, чекаємо довше
-            if "429" in str(e):
-                wait_time = 60 * (attempt + 1)
-                print(f"Rate limited, waiting {wait_time} seconds...")
-                await asyncio.sleep(wait_time)
-
-    # Якщо автоматичний airdrop не спрацював
-    print("\nAutomatic airdrop failed. Please get test SOL manually:")
-    print(f"1. Go to https://solfaucet.com/")
-    print(f"2. Enter your public key: {public_key}")
-    print(f"3. Request 1 SOL and wait for confirmation\n")
-    return False
-
-async def try_alternative_faucet(public_key):
+async def request_airdrop_if_needed(client, pubkey, min_balance=500_000_000):
+    """Запит airdrop тільки якщо баланс нижче мінімального"""
     try:
-        pubkey_str = str(public_key)
-        async with httpx.AsyncClient() as client:
-            # Спробуємо кілька популярних faucet
-            faucets = [
-                "https://faucet.solana.com/request",
-                "https://solfaucet.com/api/request",
-                "https://api.faucet.metaplex.systems/airdrop"
-            ]
+        balance_resp = await client.get_balance(pubkey)
+        balance = balance_resp['result']['value']
 
-            for faucet in faucets:
-                try:
-                    response = await client.post(
-                        faucet,
-                        json={"address": pubkey_str, "amount": 1},
-                        timeout=30
-                    )
+        if balance >= min_balance:
+            print(f"✅ Поточний баланс: {balance / 1e9} SOL (достатньо)")
+            return True
 
-                    if response.status_code == 200:
-                        print(f"Success from {faucet}")
-                        await asyncio.sleep(30)
-                        return True
-                    else:
-                        print(f"Error from {faucet}: {response.text}")
-                except Exception as e:
-                    print(f"Faucet {faucet} error: {str(e)}")
+        print(f"⚠️ Баланс низький ({balance / 1e9} SOL), запит airdrop...")
+        airdrop_resp = await client.request_airdrop(pubkey, 1_000_000_000)  # 1 SOL
+        tx_id = airdrop_resp['result']
 
+        # Чекаємо підтвердження
+        await asyncio.sleep(30)
+        confirmation = await client.confirm_transaction(tx_id)
+        if confirmation['result']['value']['err'] is None:
+            print("✅ Airdrop успішно отримано!")
+            return True
+        else:
+            print(f"❌ Помилка airdrop: {confirmation['result']['value']['err']}")
             return False
+
     except Exception as e:
-        print(f"Alternative faucet error: {str(e)}")
+        print(f"❌ Помилка отримання airdrop: {str(e)}")
         return False
 
 
 def encrypt_password(password, key):
+    """Шифрує пароль за допомогою AES-GCM"""
     cipher = AES.new(key, AES.MODE_GCM)
     ciphertext, tag = cipher.encrypt_and_digest(password.encode())
     return base64.b64encode(cipher.nonce + tag + ciphertext).decode()
 
 
 def decrypt_password(encrypted, key):
+    """Розшифровує пароль"""
     data = base64.b64decode(encrypted)
     nonce, tag, ciphertext = data[:16], data[16:32], data[32:]
     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
     return cipher.decrypt_and_verify(ciphertext, tag).decode()
 
 
-async def store_encrypted_password(client, payer, storage_account, encrypted_password):
-    space = len(encrypted_password.encode())
-    lamports = await get_minimum_balance_for_rent_exemption(client, space)
-    return await create_storage_account(client, payer, storage_account, lamports, space)
-
-
 async def main():
+    """Головна функція програми"""
     client = AsyncClient(DEVNET_URL)
     try:
+        # Ініціалізація ключів
         payer = load_keypair("payer.json")
         storage_account = load_keypair("storage_account.json")
 
-        print(f"Payer: {payer.public_key}")
-        print(f"Storage account: {storage_account.public_key}")
+        print(f"🔑 Payer: {payer.public_key}")
+        print(f"🗄️ Storage account: {storage_account.public_key}")
 
-        if not await request_airdrop_with_retry(client, payer.public_key):
-            print("Failed to get airdrop, please try again later")
-            print("You can also get test SOL manually from: https://solfaucet.com/")
+        # Отримання тестових SOL
+        if not await request_airdrop_if_needed(client, payer.public_key):
+            print("\nℹ️ Отримайте SOL вручну через https://solfaucet.com/")
+            print(f"Введіть ваш публічний ключ: {payer.public_key}\n")
             return
 
-        balance = await client.get_balance(payer.public_key)
-        print(f"Current balance: {balance.value} lamports")
-
+        # Шифрування паролю
         encryption_key = get_random_bytes(32)
         password = "my_secure_password"
         encrypted = encrypt_password(password, encryption_key)
+        print(f"🔒 Зашифрований пароль: {encrypted[:50]}...")
 
+        # Зберігання паролю
         if await store_encrypted_password(client, payer, storage_account, encrypted):
-            print("Password successfully stored!")
+            print("💾 Пароль успішно збережено в акаунті!")
 
+        # Демонстрація роботи
         decrypted = decrypt_password(encrypted, encryption_key)
-        print(f"Original: {password}")
-        print(f"Decrypted: {decrypted}")
+        print(f"🔓 Оригінальний пароль: {password}")
+        print(f"🔓 Розшифрований пароль: {decrypted}")
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"🔥 Критична помилка: {str(e)}")
     finally:
         await client.close()
+        print("🔌 З'єднання закрито")
 
 
 if __name__ == "__main__":
