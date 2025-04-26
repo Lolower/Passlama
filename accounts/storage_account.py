@@ -150,10 +150,10 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             create_account_ix = create_account(
                 CreateAccountParams(
                     from_pubkey=payer.pubkey(),
-                    to_pubkey=new_account.pubkey(),  # Змінено з new_account_pubkey
+                    to_pubkey=new_account.pubkey(),
                     lamports=lamports,
                     space=space,
-                    program_id=SYS_PROGRAM_ID
+                    owner=SYS_PROGRAM_ID  # Використовуємо owner для вказівки System Program
                 )
             )
 
@@ -165,7 +165,7 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             )
 
             # Створення транзакції
-            txn = Transaction.new(
+            txn = Transaction(
                 from_keypairs=[payer, new_account],
                 message=message,
                 recent_blockhash=recent_blockhash
@@ -205,6 +205,8 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             continue
         except Exception as e:
             print(f"❌ Помилка створення акаунта (спроба {retry_count + 1}): {str(e)}")
+            import traceback
+            traceback.print_exc()
             retry_count += 1
             await asyncio.sleep(2)
             continue
