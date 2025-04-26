@@ -150,10 +150,10 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             create_account_ix = create_account(
                 CreateAccountParams(
                     from_pubkey=payer.pubkey(),
-                    to_pubkey=new_account.pubkey(),
+                    to_pubkey=new_account.pubkey(),  # Змінено з new_account_pubkey
                     lamports=lamports,
                     space=space,
-                    owner=SYS_PROGRAM_ID  # Власник - System Program
+                    program_id=SYS_PROGRAM_ID
                 )
             )
 
@@ -165,10 +165,10 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             )
 
             # Створення транзакції
-            txn = Transaction(
-                from_keypairs=[payer, new_account],  # Передаємо підписантів
-                message=message,                     # Передаємо повідомлення
-                recent_blockhash=recent_blockhash   # Передаємо blockhash
+            txn = Transaction.new(
+                from_keypairs=[payer, new_account],
+                message=message,
+                recent_blockhash=recent_blockhash
             )
 
             # Налаштування параметрів відправки
@@ -187,33 +187,16 @@ async def create_storage_account(client, payer, new_account, lamports, space):
 
             # Очікування підтвердження
             print("⏳ Очікування підтвердження транзакції...")
-            max_confirm_retries = 5
-            confirm_retry_count = 0
-            while confirm_retry_count < max_confirm_retries:
-                try:
-                    async with asyncio.timeout(10):  # Таймаут 10 секунд для запиту
-                        confirmation = await client.get_transaction(tx_id, commitment=Confirmed)
-                        if confirmation is None or confirmation.value is None:
-                            print(f"⚠️ Транзакція {tx_id} ще не підтверджена, повторна спроба {confirm_retry_count + 1}/{max_confirm_retries}...")
-                            confirm_retry_count += 1
-                            await asyncio.sleep(5)
-                            continue
-                        if confirmation.value.transaction.meta.err is None:
-                            print(f"✅ Акаунт {new_account.pubkey()} успішно створено!")
-                            return True
-                        else:
-                            print(f"❌ Помилка підтвердження: {confirmation.value.transaction.meta.err}")
-                            break
-                except asyncio.TimeoutError:
-                    print(f"❌ Таймаут при отриманні підтвердження (спроба {confirm_retry_count + 1})")
-                    confirm_retry_count += 1
-                    await asyncio.sleep(5)
+            async with asyncio.timeout(15):  # Таймаут 15 секунд
+                confirmation = await client.get_transaction(tx_id, commitment=Confirmed)
+                if confirmation.value and confirmation.value.transaction.meta.err is None:
+                    print(f"✅ Акаунт {new_account.pubkey()} успішно створено!")
+                    return True
+                else:
+                    print(f"❌ Помилка підтвердження: {confirmation.value.transaction.meta.err}")
+                    retry_count += 1
+                    await asyncio.sleep(2)
                     continue
-
-            print(f"❌ Не вдалося підтвердити транзакцію {tx_id} після {max_confirm_retries} спроб")
-            retry_count += 1
-            await asyncio.sleep(2)
-            continue
 
         except asyncio.TimeoutError:
             print(f"❌ Таймаут при створенні акаунта (спроба {retry_count + 1})")
@@ -222,8 +205,6 @@ async def create_storage_account(client, payer, new_account, lamports, space):
             continue
         except Exception as e:
             print(f"❌ Помилка створення акаунта (спроба {retry_count + 1}): {str(e)}")
-            import traceback
-            traceback.print_exc()
             retry_count += 1
             await asyncio.sleep(2)
             continue
@@ -280,4 +261,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
