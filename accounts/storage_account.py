@@ -13,6 +13,7 @@ from solders.pubkey import Pubkey
 from solders.transaction import Transaction
 from solders.message import Message
 from solders.system_program import CreateAccountParams, create_account
+from dotenv import load_dotenv
 
 SYS_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 DEVNET_URL = ("https://api.devnet.solana.com")
@@ -43,11 +44,18 @@ def load_keypair(filename):
         raise
 
 def save_encryption_key(key, filename):
-    """Зберігає ключ шифрування у файл"""
-    ensure_crypto_dir()
-    with open(os.path.join("crypto", filename), 'wb') as f:
-        f.write(base64.b64encode(key))
-    print(f"🔑 Ключ шифрування збережено у {filename}")
+    """Зберігає ключ шифрування у .env"""
+    with open(".env", "a") as f:
+        f.write(f"ENCRYPTION_KEY={base64.b64encode(key).decode()}\n")
+    print("🔑 Ключ шифрування збережено у .env")
+
+def load_encryption_key():
+    """Завантажує ключ шифрування з .env"""
+    load_dotenv()
+    key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        raise ValueError("Ключ шифрування не знайдено в .env")
+    return base64.b64decode(key)
 
 async def get_minimum_balance_for_rent_exemption(client, space):
     """Отримує мінімальний баланс для звільнення від ренти"""
@@ -117,9 +125,13 @@ async def store_encrypted_password(client, payer, storage_account, encrypted_pas
     """Резервує місце для зашифрованого пароля в акаунті"""
     print("🗄️ Резервування місця для пароля...")
     try:
-        space = len(encrypted_password.encode()) + 8  # Додатковий простір для метаданих
+        space = len(encrypted_password.encode()) + 8
         lamports = await get_minimum_balance_for_rent_exemption(client, space)
-        return await create_storage_account(client, payer, storage_account, lamports, space)
+        success = await create_storage_account(client, payer, storage_account, lamports, space)
+        if success:
+            print("✅ Акаунт готовий до зберігання пароля")
+            # TODO: Реалізувати запис пароля через Solana-програму
+        return success
     except Exception as e:
         print(f"❌ Помилка резервування місця для пароля: {str(e)}")
         raise
