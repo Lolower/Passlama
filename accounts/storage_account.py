@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 
 SYS_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 DEVNET_URL = ("https://api.devnet.solana.com")
-
+PROGRAM_ID = Pubkey.from_string(os.getenv("G6cSDFKD5QgvaMUUmy8xMKDEn3LfCcjej9wjYwpsY3tj", "G6cSDFKD5QgvaMUUmy8xMKDEn3LfCcjej9wjYwpsY3tj"))
 def ensure_crypto_dir():
     """Створює папку crypto, якщо її немає"""
     os.makedirs("crypto", exist_ok=True)
