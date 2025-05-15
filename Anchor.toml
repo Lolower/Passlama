@@ -1,0 +1,26 @@
+[toolchain]
+package_manager = "yarn"
+build_command = "build-sbf"
+
+
+[features]
+resolution = true
+skip-lint = false
+seeds = true  # Змінюємо на булеве значення
+
+[programs.localnet]
+password_vault = "FAjsXV6jUnBB48aydJpRXonx1jwRCbPiHTuATnTWCDiP"
+
+[programs.devnet]
+password_vault = "FAjsXV6jUnBB48aydJpRXonx1jwRCbPiHTuATnTWCDiP"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
