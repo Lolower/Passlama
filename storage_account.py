@@ -1,198 +1,92 @@
-import json
 import asyncio
 import base64
+import json
+import hashlib
+import base58
+from os import urandom
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
+from solders.hash import Hash
+from solders.instruction import Instruction, AccountMeta, CompiledInstruction
+from solders.message import MessageV0, MessageHeader
+from solders.transaction import VersionedTransaction
+from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
+from solders.rpc.responses import GetTransactionResp
 from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import TxOpts
-from solana.rpc.api import Client as SyncClient
-from solders.message import MessageV0
-from solders.transaction import VersionedTransaction
-from solders.system_program import create_account_with_seed
-import os
 from cryptography.fernet import Fernet
-import random
+from typing import Optional
 
-DEVNET_URL = "https://api.devnet.solana.com"
+DEVNET_URL = "http://localhost:8899"
+PROGRAM_ID = Pubkey.from_string("GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH")  # Updated Program ID
 SYS_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
-PROGRAM_ID = Pubkey.from_string("FAjsXV6jUnBB48aydJpRXonx1jwRCbPiHTuATnTWCDiP")
 
+def load_keypair(filename: str) -> Keypair:
+    with open(filename, "r") as f:
+        keypair_data = json.load(f)
+    secret_key = base58.b58decode(keypair_data["secret_key"])
+    return Keypair.from_bytes(secret_key)
 
+def get_random_bytes(length: int) -> bytes:
+    return urandom(length)
 
-def ensure_crypto_dir():
-    os.makedirs("cryptod", exist_ok=True)
+def encrypt_password(password: str, key: bytes) -> str:
+    cipher = Fernet(base64.urlsafe_b64encode(key))
+    return base64.b64encode(cipher.encrypt(password.encode('utf-8'))).decode('ascii')
 
-def generate_and_save_keypair(filename):
-    ensure_crypto_dir()
-    keypair = Keypair()
-    with open(os.path.join("cryptod", filename), 'w') as f:
-        json.dump(list(keypair.to_bytes()), f)
-    return keypair
+def decrypt_password(encrypted_password: str, key: bytes) -> str:
+    cipher = Fernet(base64.urlsafe_b64encode(key))
+    encrypted_bytes = base64.b64decode(encrypted_password.encode('ascii'))
+    return cipher.decrypt(encrypted_bytes).decode('utf-8')
 
-def load_keypair(filename):
-    try:
-        with open(os.path.join("cryptod", filename), 'r') as f:
-            key_bytes = json.load(f)
-        return Keypair.from_bytes(bytes(key_bytes))
-    except FileNotFoundError:
-        print(f"Генерація нової ключової пари для {filename}...")
-        return generate_and_save_keypair(filename)
-
-def save_encryption_key(key, filename):
-    ensure_crypto_dir()
-    with open(os.path.join("cryptod", filename), 'wb') as f:
-        f.write(base64.b64encode(key))
+def save_encryption_key(key: bytes, filename: str):
+    with open(filename, "wb") as f:
+        f.write(key)
     print(f"🔑 Ключ шифрування збережено у {filename}")
 
-async def get_minimum_balance_for_rent_exemption(client, space):
+async def get_minimum_balance_for_rent_exemption(client: AsyncClient, data_size: int) -> int:
     print("📏 Отримання мінімального балансу для ренти...")
-    async with asyncio.timeout(10):
-        resp = await client.get_minimum_balance_for_rent_exemption(space)
-        return resp.value
+    resp = await client.get_minimum_balance_for_rent_exemption(data_size, commitment="confirmed")
+    return resp.value
 
-async def request_airdrop_if_needed(client, pubkey, min_balance=500_000_000):
+async def request_airdrop_if_needed(client: AsyncClient, pubkey: Pubkey) -> bool:
     print("💰 Перевірка балансу...")
-    async with asyncio.timeout(10):
-        balance_resp = await client.get_balance(pubkey, commitment=Confirmed)
-        balance = balance_resp.value
-        if balance >= min_balance:
-            print(f"✅ Поточний баланс: {balance / 1_000_000_000} SOL (достатньо)")
-            return True
-        print(f"⚠️ Баланс низький ({balance / 1_000_000_000} SOL), запит airdrop...")
-        airdrop_resp = await client.request_airdrop(pubkey, 1_000_000_000, commitment=Confirmed)
-        tx_id = airdrop_resp.value
-        start_time = time.time()
-        timeout = 60
-        while time.time() - start_time < timeout:
-            confirmation = await client.get_transaction(tx_id, commitment=Confirmed)
-            if confirmation.value and confirmation.value.transaction.meta.err is None:
-                balance_resp = await client.get_balance(pubkey, commitment=Confirmed)
-                if balance_resp.value > 0:
-                    print("✅ Airdrop успішно отримано!")
-                    return True
-            await asyncio.sleep(5)
-        print("❌ Помилка airdrop: таймаут")
-        return False
-
-def encrypt_password(password, key):
-    print("🔐 Шифрування пароля...")
-    cipher = AES.new(key, AES.MODE_GCM)
-    ciphertext, tag = cipher.encrypt_and_digest(password.encode())
-    return base64.b64encode(cipher.nonce + tag + ciphertext).decode()
-
-def decrypt_password(encrypted, key):
-    print("🔓 Розшифрування пароля...")
-    data = base64.b64decode(encrypted)
-    nonce, tag, ciphertext = data[:16], data[16:32], data[32:]
-    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-    return cipher.decrypt_and_verify(ciphertext, tag).decode()
-
-async def create_storage_account(client, payer, storage_account, lamports, space):
-    print("🔨 Створення акаунта для зберігання...")
-    max_retries = 3
-    retry_count = 0
-
-    async with asyncio.timeout(10):
-        account_info = await client.get_account_info(storage_account.pubkey(), commitment=Confirmed)
-        if account_info.value is not None:
-            print(f"⚠️ Акаунт {storage_account.pubkey()} уже існує!")
-            return True
-
-    while retry_count < max_retries:
+    balance = await client.get_balance(pubkey, commitment="confirmed")
+    print(f"💰 Баланс: {balance.value / 1e9} SOL")
+    if balance.value / 1e9 < 0.5:
+        print("💧 Запит airdrop 1 SOL...")
         try:
-            print(f"🔄 Отримання blockhash (спроба {retry_count + 1})...")
-            async with asyncio.timeout(10):
-                blockhash_resp = await client.get_latest_blockhash(commitment=Confirmed)
-                recent_blockhash = blockhash_resp.value.blockhash
-                print(f"🔄 Використовується blockhash: {recent_blockhash}")
-
-            create_account_ix = sp.CreateAccountWithSeedParams(
-                from_pubkey=payer.pubkey(),
-                to_pubkey=storage_account.pubkey(),
-                base_pubkey=payer.pubkey(),
-                seed="storage",
-                lamports=lamports,
-                space=space,
-                program_id=PROGRAM_ID
-            ).to_instruction()
-
-            message = MessageV0.compile(
-                payer=payer.pubkey(),
-                instructions=[create_account_ix],
-                recent_blockhash=recent_blockhash
-            )
-
-            txn = VersionedTransaction(
-                message=message,
-                keypairs=[payer]
-            )
-
-            send_opts = TxOpts(
-                skip_preflight=False,
-                preflight_commitment=Confirmed,
-                max_retries=3
-            )
-
-            print("📤 Відправка транзакції...")
-            async with asyncio.timeout(15):
-                result = await client.send_transaction(txn, opts=send_opts)
-                tx_id = result.value
-                print(f"📤 Транзакція відправлена з ID: {tx_id}")
-
-            print("⏳ Очікування підтвердження транзакції...")
-            async with asyncio.timeout(15):
-                confirmation = await client.get_transaction(tx_id, commitment=Confirmed)
-                if confirmation.value and confirmation.value.transaction.meta.err is None:
-                    print(f"✅ Акаунт {storage_account.pubkey()} успішно створено!")
-                    return True
-                else:
-                    print(f"❌ Помилка підтвердження: {confirmation.value.transaction.meta.err}")
-                    retry_count += 1
-                    await asyncio.sleep(2)
-                    continue
-
-        except asyncio.TimeoutError:
-            print(f"❌ Таймаут при створенні акаунта (спроба {retry_count + 1})")
-            retry_count += 1
-            await asyncio.sleep(2)
-            continue
+            airdrop_sig = await client.request_airdrop(pubkey, 1_000_000_000)
+            await client.confirm_transaction(airdrop_sig.value, commitment="confirmed")
+            print("✅ Airdrop виконано!")
+            return True
         except Exception as e:
-            print(f"❌ Помилка створення акаунта (спроба {retry_count + 1}): {str(e)}")
-            retry_count += 1
-            await asyncio.sleep(2)
-            continue
+            print(f"❌ Помилка airdrop: {str(e)}")
+            return False
+    print("✅ Баланс достатній, airdrop не потрібен")
+    return True
 
-    print(f"❌ Не вдалося створити акаунт після {max_retries} спроб")
-    return False
-
-
-
-async def store_encrypted_password(client, payer, storage_account_pubkey: Pubkey, encrypted_password: str, bump: int) -> bool:
+async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_account_pubkey: Pubkey, encrypted_password: str, bump: int) -> bool:
     print("🗄️ Зберігання пароля в акаунті...")
     try:
-        space = 8 + 1 + 4 + 1024 + 1  # Відповідає розміру в lib.rs
+        space = 8 + 1 + 4 + 1024 + 1
         lamports = await get_minimum_balance_for_rent_exemption(client, space)
         print(f"📊 Потрібно lamports: {lamports}")
-        account_info = await client.get_account_info(storage_account_pubkey, commitment=Confirmed)
-        is_initialized = account_info.value is not None
-        print(f"ℹ️ Акаунт ініціалізований: {is_initialized}")
 
-        encrypted_bytes = base64.b64decode(encrypted_password)
+
+        encrypted_bytes = base64.b64decode(encrypted_password.encode('ascii'))
+        print(f"🔍 Перші 20 байт encrypted_bytes (hex): {encrypted_bytes[:20].hex()}")
         print(f"🔒 Розмір зашифрованого пароля: {len(encrypted_bytes)} байт")
 
-        if not is_initialized:
-            # Створюємо Keypair для payer, але використовуємо Pubkey для storage_account
-            storage_account = Keypair()  # Тимчасовий Keypair для створення акаунта
-            success = await create_storage_account(client, payer, storage_account, lamports, space)
-            if not success:
-                print("❌ Не вдалося створити акаунт")
-                return False
-
-        # Оновлений дискримінатор для "global:initialize"
-        import hashlib
+        function_name = "global:initialize"
+        discriminator = hashlib.sha256(function_name.encode()).digest()[:8]
         function_name = "global:initialize"
         discriminator = hashlib.sha256(function_name.encode()).digest()[:8]
         instruction_data = discriminator + encrypted_bytes + bytes([bump])
+        print(f"🔍 Довжина instruction_data: {len(instruction_data)} байт")
+        print(f"🔍 Довжина discriminator: {len(discriminator)} байт")
+        print(f"🔍 Довжина encrypted_bytes: {len(encrypted_bytes)} байт") 
+        print(f"🔍 Bump: {bump}")
 
         accounts = [
             AccountMeta(pubkey=storage_account_pubkey, is_signer=False, is_writable=True),
@@ -206,45 +100,58 @@ async def store_encrypted_password(client, payer, storage_account_pubkey: Pubkey
             data=instruction_data
         )
 
-        # Додавання інструкцій для compute budget
-        compute_unit_limit_ix = set_compute_unit_limit(200_000)
+        compute_unit_limit_ix = set_compute_unit_limit(400_000)
         compute_unit_price_ix = set_compute_unit_price(0)
 
-        # Оновлення recent_blockhash
         async with asyncio.timeout(10):
-            blockhash_resp = await client.get_latest_blockhash(commitment=Confirmed)
+            blockhash_resp = await client.get_latest_blockhash(commitment="confirmed")
             recent_blockhash = blockhash_resp.value.blockhash
             print(f"🔄 Використовується blockhash: {recent_blockhash}")
 
-        message = MessageV0.compile(
-            payer=payer.pubkey(),
-            instructions=[compute_unit_limit_ix, compute_unit_price_ix, initialize_ix],
-            recent_blockhash=recent_blockhash
+        account_keys = [
+            payer.pubkey(),
+            storage_account_pubkey,
+            SYS_PROGRAM_ID,
+            Pubkey.from_string("ComputeBudget111111111111111111111111111111"),
+            PROGRAM_ID,
+        ]
+
+        message = MessageV0(
+            header=MessageHeader(num_required_signatures=1, num_readonly_signed_accounts=0, num_readonly_unsigned_accounts=2),
+            account_keys=account_keys,
+            recent_blockhash=recent_blockhash,
+            instructions=[
+                CompiledInstruction(program_id_index=3, accounts=bytes([0]), data=compute_unit_limit_ix.data),
+                CompiledInstruction(program_id_index=3, accounts=bytes([0]), data=compute_unit_price_ix.data),
+                CompiledInstruction(program_id_index=4, accounts=bytes([1, 0, 2]), data=initialize_ix.data),
+            ],
+            address_table_lookups=[]
         )
 
-        txn = VersionedTransaction(
-            message=message,
-            keypairs=[payer]
-        )
+        transaction = VersionedTransaction(message, [payer])
 
         send_opts = TxOpts(
             skip_preflight=False,
-            preflight_commitment=Confirmed,
+            preflight_commitment="confirmed",
             max_retries=3
         )
 
         print("📤 Відправка транзакції ініціалізації...")
-        result = await client.send_transaction(txn, opts=send_opts)
+        result = await client.send_transaction(transaction, opts=send_opts)
         tx_id = result.value
         print(f"📤 Транзакція відправлена з ID: {tx_id}")
 
         print("⏳ Очікування підтвердження транзакції...")
         async with asyncio.timeout(15):
-            confirmation = await client.get_transaction(tx_id, commitment=Confirmed)
-            if confirmation.value and confirmation.value.transaction.meta.err is None:
-                print("✅ Акаунт ініціалізовано та пароль збережено!")
+            confirmation = await client.get_transaction(tx_id, commitment="confirmed")
+            if isinstance(confirmation, GetTransactionResp) and confirmation.value is not None:
+                if confirmation.value.transaction.meta is not None and confirmation.value.transaction.meta.err is None:
+                    print("✅ Акаунт ініціалізовано та пароль збережено!")
+                else:
+                    print(f"❌ Помилка ініціалізації: {confirmation.value.transaction.meta.err}")
+                    return False
             else:
-                print(f"❌ Помилка ініціалізації: {confirmation.value.transaction.meta.err}")
+                print("❌ Транзакція не підтверджена")
                 return False
 
         return True
@@ -252,10 +159,10 @@ async def store_encrypted_password(client, payer, storage_account_pubkey: Pubkey
         print(f"❌ Помилка зберігання пароля: {str(e)}")
         raise
 
-async def retrieve_encrypted_password(client, storage_account_pubkey: Pubkey) -> str:
+async def retrieve_encrypted_password(client: AsyncClient, storage_account_pubkey: Pubkey) -> str:
     print("📥 Отримання пароля з акаунта...")
     try:
-        account_info = await client.get_account_info(storage_account_pubkey, commitment=Confirmed)
+        account_info = await client.get_account_info(storage_account_pubkey, commitment="confirmed")
         if account_info.value is None:
             print("❌ Акаунт не існує")
             raise Exception("Account not found")
@@ -265,9 +172,9 @@ async def retrieve_encrypted_password(client, storage_account_pubkey: Pubkey) ->
             print("❌ Недостатньо даних в акаунті")
             raise Exception("Invalid account data")
 
-        encrypted_bytes = data[8:]  # Пропускаємо дискримінатор
-        encrypted = base64.b64encode(encrypted_bytes).decode()
-        print("✅ Зашифрований пароль отриміано!")
+        encrypted_bytes = data[8:]
+        encrypted = base64.b64encode(encrypted_bytes).decode('ascii')
+        print("✅ Зашифрований пароль отримано!")
         return encrypted
     except Exception as e:
         print(f"❌ Помилка отримання пароля: {str(e)}")
@@ -279,9 +186,8 @@ async def main():
     try:
         print("🔑 Ініціалізація ключів...")
         payer = load_keypair("payer.json")
-        # Генерація PDA для storage_account
-        seeds = [b"password_vault"]  # Відповідає seeds у lib.rs
-        storage_account_pubkey, bump = Pubkey.find_program_address(seeds, PROGRAM_ID)
+        seeds = [bytes(payer.pubkey()), b"password_vault"]
+        storage_account_pubkey, bump = Pubkey.find_program_address(seeds, PROGRAM_ID)  # Use PROGRAM_ID
         print(f"🗄️ Storage account (PDA): {storage_account_pubkey}")
         print(f"🔑 Payer: {payer.pubkey()}")
 
@@ -289,6 +195,7 @@ async def main():
         if not await request_airdrop_if_needed(client, payer.pubkey()):
             print("\nℹ️ Отримійте SOL вручну через https://solfaucet.com...")
             print(f"Введіть ваш публічний ключ: {payer.pubkey()}\n")
+            print("❌ Програма зупинена через помилку airdrop")
             return
 
         print("🔐 Очікування введення пароля...")
@@ -302,7 +209,6 @@ async def main():
         print(f"🔒 Зашифрований пароль: {encrypted[:50]}...")
         save_encryption_key(encryption_key, "encryption_key.txt")
 
-        # Передаємо storage_account_pubkey як Pubkey, а не Keypair
         if await store_encrypted_password(client, payer, storage_account_pubkey, encrypted, bump):
             print("💾 Пароль успішно збережено в акаунті!")
 
@@ -323,4 +229,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
