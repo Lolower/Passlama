@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Phantom Wallet Connect</title>
+</head>
+<body>
+    <h1>Connect to Phantom Wallet</h1>
+    <button id="connectButton">Connect Phantom Wallet</button>
+    <p id="walletInfo"></p>
+    <p>Copy the Public Key below and save it to phantom_public_key.txt manually:</p>
+    <textarea id="publicKeyTextarea" rows="2" cols="50" readonly></textarea>
+
+    <script>
+        const connectButton = document.getElementById('connectButton');
+        const walletInfo = document.getElementById('walletInfo');
+        const publicKeyTextarea = document.getElementById('publicKeyTextarea');
+
+        connectButton.addEventListener('click', async () => {
+            if ("solana" in window) {
+                const provider = window.solana;
+                try {
+                    console.log("Attempting to connect to Phantom...");
+                    await provider.connect();
+                    const publicKey = provider.publicKey.toString();
+                    walletInfo.textContent = `Connected! Public Key: ${publicKey}`;
+                    console.log("Public Key:", publicKey);
+                    publicKeyTextarea.value = publicKey;
+
+                    // Спроба автоматичного завантаження (опціонально)
+                    const blob = new Blob([publicKey], { type: 'text/plain' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = 'phantom_public_key.txt';
+                    a.click();
+                } catch (err) {
+                    console.error("Connection error:", err);
+                    walletInfo.textContent = `Error connecting: ${err.message}`;
+                }
+            } else {
+                walletInfo.textContent = 'Phantom Wallet not detected. Please install it.';
+            }
+        });
+    </script>
+</body>
+</html>
