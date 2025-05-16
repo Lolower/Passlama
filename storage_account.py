@@ -73,20 +73,26 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
         lamports = await get_minimum_balance_for_rent_exemption(client, space)
         print(f"📊 Потрібно lamports: {lamports}")
 
-
         encrypted_bytes = base64.b64decode(encrypted_password.encode('ascii'))
         print(f"🔍 Перші 20 байт encrypted_bytes (hex): {encrypted_bytes[:20].hex()}")
         print(f"🔒 Розмір зашифрованого пароля: {len(encrypted_bytes)} байт")
 
-        function_name = "global:initialize"
-        discriminator = hashlib.sha256(function_name.encode()).digest()[:8]
-        function_name = "global:initialize"
-        discriminator = hashlib.sha256(function_name.encode()).digest()[:8]
-        instruction_data = discriminator + encrypted_bytes + bytes([bump])
+        # Створюємо масив фіксованого розміру (109 байт) для data
+        data = bytearray(109)
+        data[0:100] = encrypted_bytes  # 100 байт для зашифрованого пароля
+        data[100] = bump  # 1 байт для bump
+        data[101:109] = bytes([0] * 8)  # Заповнюємо 8 байт нулів
+
+        data_len = 101  # 100 байт encrypted_bytes + 1 байт bump
+
+        # Формуємо instruction_data: data (109 байт) + data_len (4 байти) + bump (1 байт)
+        instruction_data = bytes(data) + data_len.to_bytes(4, byteorder='little') + bytes([bump])
+        print(f"🔍 Повний instruction_data (hex): {instruction_data.hex()}")  # Додане дебагування
+
         print(f"🔍 Довжина instruction_data: {len(instruction_data)} байт")
-        print(f"🔍 Довжина discriminator: {len(discriminator)} байт")
-        print(f"🔍 Довжина encrypted_bytes: {len(encrypted_bytes)} байт") 
+        print(f"🔍 Довжина encrypted_bytes: {len(encrypted_bytes)} байт")
         print(f"🔍 Bump: {bump}")
+        print(f"🔍 data_len: {data_len}")
 
         accounts = [
             AccountMeta(pubkey=storage_account_pubkey, is_signer=False, is_writable=True),
@@ -100,7 +106,7 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
             data=instruction_data
         )
 
-        compute_unit_limit_ix = set_compute_unit_limit(400_000)
+        compute_unit_limit_ix = set_compute_unit_limit(600_000)
         compute_unit_price_ix = set_compute_unit_price(0)
 
         async with asyncio.timeout(10):

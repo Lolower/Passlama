@@ -9,16 +9,16 @@ skip-lint = false
 seeds = true  # Змінюємо на булеве значення
 
 [programs.localnet]
-password_vault = "FVMfHPUv3kk2AfoMUJ4YePTJ31sBjSYMER9YK3rC9wHq"
+password_vault = "GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH"
 
 [programs.devnet]
-password_vault = "FVMfHPUv3kk2AfoMUJ4YePTJ31sBjSYMER9YK3rC9wHq"
+password_vault = "GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "http://localhost:8899"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
