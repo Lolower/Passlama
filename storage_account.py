@@ -18,7 +18,7 @@ from cryptography.fernet import Fernet
 from typing import Optional
 
 DEVNET_URL = "http://localhost:8899"
-PROGRAM_ID = Pubkey.from_string("GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH")  # Updated Program ID
+PROGRAM_ID = Pubkey.from_string("7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax")  # Updated Program ID
 SYS_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 
 def load_keypair(filename: str) -> Keypair:
@@ -85,9 +85,11 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
 
         data_len = 101  # 100 байт encrypted_bytes + 1 байт bump
 
-        # Формуємо instruction_data: data (109 байт) + data_len (4 байти) + bump (1 байт)
-        instruction_data = bytes(data) + data_len.to_bytes(4, byteorder='little') + bytes([bump])
-        print(f"🔍 Повний instruction_data (hex): {instruction_data.hex()}")  # Додане дебагування
+        # Додаємо discriminator вручну
+        discriminator = bytes([175, 175, 109, 31, 13, 152, 155, 237])
+        # Формуємо instruction_data: discriminator (8 байт) + data (109 байт) + data_len (4 байти) + bump (1 байт)
+        instruction_data = discriminator + bytes(data) + data_len.to_bytes(4, byteorder='little') + bytes([bump])
+        print(f"🔍 Повний instruction_data (hex): {instruction_data.hex()}")
 
         print(f"🔍 Довжина instruction_data: {len(instruction_data)} байт")
         print(f"🔍 Довжина encrypted_bytes: {len(encrypted_bytes)} байт")
