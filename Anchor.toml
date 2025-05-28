@@ -9,10 +9,10 @@ skip-lint = false
 seeds = true  # Змінюємо на булеве значення
 
 [programs.localnet]
-password_vault = "GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH"
+password_vault = "7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax"
 
 [programs.devnet]
-password_vault = "GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH"
+password_vault = "7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax"
 
 [registry]
 url = "https://api.apr.dev"

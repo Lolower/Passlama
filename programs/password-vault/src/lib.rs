@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("GCA4aqiUT57vPoc6seLrSLBXk9BRnp3Ptpqb6nbg19JH");
+declare_id!("7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax");
 
 #[program]
 pub mod password_vault {
@@ -18,13 +18,21 @@ pub mod password_vault {
         account.data_len = data_len;
         account.bump = bump;
 
+        msg!("Initialize called with data_len: {}", data_len);
+
         Ok(())
     }
 }
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(mut, seeds = [payer.key().as_ref(), b"password_vault"], bump)]
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 1 + 1024 + 4 + 1,
+        seeds = [payer.key().as_ref(), b"password_vault"],
+        bump
+    )]
     pub storage_account: Account<'info, StorageAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
