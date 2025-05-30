@@ -16,6 +16,11 @@ from solana.rpc.async_api import AsyncClient
 from solana.rpc.types import TxOpts
 from cryptography.fernet import Fernet
 from typing import Optional
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+
+
 
 DEVNET_URL = "http://localhost:8899"
 PROGRAM_ID = Pubkey.from_string("7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax")
@@ -53,18 +58,19 @@ def encrypt_password(password: str, key: bytes) -> str:
     fernet_key = base64.urlsafe_b64encode(key)
     cipher = Fernet(fernet_key)
     encrypted = cipher.encrypt(password.encode('utf-8'))
-    return base64.b64encode(encrypted).decode('ascii')
-
-
+    a = base64.b64encode(encrypted).decode('ascii')
+    print(a)
+    return a
+    
 def decrypt_password(encrypted_password: str, key: bytes) -> str:
     if len(key) != 32:
         raise ValueError("Key must be exactly 32 bytes (256 bits) long before base64 encoding.")
     
     fernet_key = base64.urlsafe_b64encode(key)
     cipher = Fernet(fernet_key)
+
     encrypted_bytes = base64.b64decode(encrypted_password.encode('ascii'))
     return cipher.decrypt(encrypted_bytes).decode('utf-8')
-
 
 def save_encryption_key(key: bytes, filename: str):
     with open(filename, "wb") as f:
@@ -184,6 +190,7 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
     except Exception as e:
         print(f"❌ Помилка зберігання пароля: {str(e)}")
         raise
+
 async def retrieve_encrypted_password(client: AsyncClient, storage_account_pubkey: Pubkey) -> str:
     print("📥 Отримання пароля з акаунта...")
     try:
@@ -200,13 +207,11 @@ async def retrieve_encrypted_password(client: AsyncClient, storage_account_pubke
         encrypted_bytes = data[8:]
         encrypted = base64.b64encode(encrypted_bytes).decode('ascii')
         print("✅ Зашифрований пароль отримано!")
-        decypted = decrypt_password(encrypted)
-        print(decypted)
-        return encrypted, decypted
+        
+        return encrypted
     except Exception as e:
         print(f"❌ Помилка отримання пароля: {str(e)}")
         raise
-
 
 async def main():
     print("🚀 Запуск програми...")
@@ -233,6 +238,7 @@ async def main():
             return
 
         encryption_key = get_random_bytes(32)
+        print(encryption_key)
         encrypted = encrypt_password(password, encryption_key)
         print(f"🔒 Зашифрований пароль: {encrypted[:50]}...")
         save_encryption_key(encryption_key, "encryption_key.txt")
