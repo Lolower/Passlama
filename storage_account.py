@@ -18,8 +18,24 @@ from cryptography.fernet import Fernet
 from typing import Optional
 
 DEVNET_URL = "http://localhost:8899"
-PROGRAM_ID = Pubkey.from_string("7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax")  # Updated Program ID
+PROGRAM_ID = Pubkey.from_string("7zQRzCwC9sL5iHUdpkggFSGKcqq6THhNTWSdTrJyaoax")
 SYS_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+
+async def wait_for_confirmation(client: AsyncClient, tx_id: str, timeout: int = 20, interval: float = 1.5):
+    """Очікує підтвердження транзакції..."""
+    for _ in range(int(timeout / interval)):
+        resp = await client.get_transaction(tx_id, commitment="confirmed", max_supported_transaction_version=0)
+        if resp.value is not None and resp.value.transaction.meta is not None:
+            if resp.value.transaction.meta.err is None:
+                print("Акаунт ініціалізовано та пароль збережено!")
+                return True
+            else:
+                print(f"Помилка ініціалізації: {resp.value.transaction.meta.err}")
+                return False
+        await asyncio.sleep(interval)
+
+    print("Транзакція не підтверджена після очікування")
+    return False
 
 def load_keypair(filename: str) -> Keypair:
     with open(filename, "r") as f:
@@ -150,18 +166,9 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
         print(f"📤 Транзакція відправлена з ID: {tx_id}")
 
         print("⏳ Очікування підтвердження транзакції...")
-        async with asyncio.timeout(15):
-            confirmation = await client.get_transaction(tx_id, commitment="confirmed")
-            if isinstance(confirmation, GetTransactionResp) and confirmation.value is not None:
-                if confirmation.value.transaction.meta is not None and confirmation.value.transaction.meta.err is None:
-                    print("✅ Акаунт ініціалізовано та пароль збережено!")
-                else:
-                    print(f"❌ Помилка ініціалізації: {confirmation.value.transaction.meta.err}")
-                    return False
-            else:
-                print("❌ Транзакція не підтверджена")
-                return False
-
+        success = await wait_for_confirmation(client, tx_id)
+        if not success:
+            return False
         return True
     except Exception as e:
         print(f"❌ Помилка зберігання пароля: {str(e)}")
@@ -223,9 +230,12 @@ async def main():
             retrieved_encrypted = await retrieve_encrypted_password(client, storage_account_pubkey)
             print(f"📥 Отриміано зашифрований пароль: {retrieved_encrypted[:50]}...")
 
-            decrypted = decrypt_password(retrieved_encrypted, encryption_key)
-            print(f"🔓 Оригінальний пароль: {password}")
-            print(f"🔓 Розшифрований пароль: {decrypted}")
+            try:
+                decrypted = decrypt_password(retrieved_encrypted, encryption_key)
+                print(f"🔓 Оригінальний пароль: {password}")
+                print(f"🔓 Розшифрований пароль: {decrypted}")
+            except Exception as e:
+                print(f"{str(e)}")
         else:
             print("❌ Не вдалося зберегти пароль")
 
@@ -237,3 +247,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
