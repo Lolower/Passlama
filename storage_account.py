@@ -47,13 +47,24 @@ def get_random_bytes(length: int) -> bytes:
     return urandom(length)
 
 def encrypt_password(password: str, key: bytes) -> str:
-    cipher = Fernet(base64.urlsafe_b64encode(key))
-    return base64.b64encode(cipher.encrypt(password.encode('utf-8'))).decode('ascii')
+    if len(key) != 32:
+        raise ValueError("Key must be exactly 32 bytes (256 bits) long before base64 encoding.")
+    
+    fernet_key = base64.urlsafe_b64encode(key)
+    cipher = Fernet(fernet_key)
+    encrypted = cipher.encrypt(password.encode('utf-8'))
+    return base64.b64encode(encrypted).decode('ascii')
+
 
 def decrypt_password(encrypted_password: str, key: bytes) -> str:
-    cipher = Fernet(base64.urlsafe_b64encode(key))
+    if len(key) != 32:
+        raise ValueError("Key must be exactly 32 bytes (256 bits) long before base64 encoding.")
+    
+    fernet_key = base64.urlsafe_b64encode(key)
+    cipher = Fernet(fernet_key)
     encrypted_bytes = base64.b64decode(encrypted_password.encode('ascii'))
     return cipher.decrypt(encrypted_bytes).decode('utf-8')
+
 
 def save_encryption_key(key: bytes, filename: str):
     with open(filename, "wb") as f:
@@ -173,7 +184,6 @@ async def store_encrypted_password(client: AsyncClient, payer: Keypair, storage_
     except Exception as e:
         print(f"❌ Помилка зберігання пароля: {str(e)}")
         raise
-
 async def retrieve_encrypted_password(client: AsyncClient, storage_account_pubkey: Pubkey) -> str:
     print("📥 Отримання пароля з акаунта...")
     try:
@@ -190,10 +200,13 @@ async def retrieve_encrypted_password(client: AsyncClient, storage_account_pubke
         encrypted_bytes = data[8:]
         encrypted = base64.b64encode(encrypted_bytes).decode('ascii')
         print("✅ Зашифрований пароль отримано!")
-        return encrypted
+        decypted = decrypt_password(encrypted)
+        print(decypted)
+        return encrypted, decypted
     except Exception as e:
         print(f"❌ Помилка отримання пароля: {str(e)}")
         raise
+
 
 async def main():
     print("🚀 Запуск програми...")
